@@ -4,7 +4,6 @@ pipeline {
   environment {
     AWS_REGION = 'ap-south-1'
     CODEBUILD_PROJECT = 'vamsi-codebuild-project'
-    GITHUB_REPO_URL = 'https://github.com/20481A04K2/awsfrontendecs.git'
     SERVICE_ROLE_ARN = 'arn:aws:iam::337243655832:role/service-role/codebuild-vamsi-project-service-role'
     CODEDEPLOY_APP = 'vamsi-app'
     CODEDEPLOY_DG = 'vamsi-dg'
@@ -15,23 +14,36 @@ pipeline {
   }
 
   stages {
-    stage('Create CodeDeploy App and DG') {
+
+    stage('Create CodeDeploy App and Deployment Group') {
       steps {
         script {
           sh """
-          echo "🔧 Creating CodeDeploy App if not exists..."
-          APP_EXISTS=\$(aws deploy get-application --application-name $CODEDEPLOY_APP --region $AWS_REGION --query 'application.applicationName' --output text 2>/dev/null || echo MISSING)
+          echo "🔧 Checking/Creating CodeDeploy Application..."
+          APP_EXISTS=\$(aws deploy get-application \
+            --application-name $CODEDEPLOY_APP \
+            --region $AWS_REGION \
+            --query 'application.applicationName' \
+            --output text 2>/dev/null || echo "MISSING")
+
           if [ "\$APP_EXISTS" = "MISSING" ]; then
             aws deploy create-application \
               --application-name $CODEDEPLOY_APP \
               --compute-platform ECS \
               --region $AWS_REGION
+            echo "✅ CodeDeploy application created."
           else
-            echo "✅ CodeDeploy app exists: \$APP_EXISTS"
+            echo "✅ CodeDeploy application already exists."
           fi
 
-          echo "🔧 Creating CodeDeploy Deployment Group if not exists..."
-          DG_EXISTS=\$(aws deploy get-deployment-group --application-name $CODEDEPLOY_APP --deployment-group-name $CODEDEPLOY_DG --region $AWS_REGION --query 'deploymentGroupInfo.deploymentGroupName' --output text 2>/dev/null || echo MISSING)
+          echo "🔧 Checking/Creating CodeDeploy Deployment Group..."
+          DG_EXISTS=\$(aws deploy get-deployment-group \
+            --application-name $CODEDEPLOY_APP \
+            --deployment-group-name $CODEDEPLOY_DG \
+            --region $AWS_REGION \
+            --query 'deploymentGroupInfo.deploymentGroupName' \
+            --output text 2>/dev/null || echo "MISSING")
+
           if [ "\$DG_EXISTS" = "MISSING" ]; then
             aws deploy create-deployment-group \
               --application-name $CODEDEPLOY_APP \
@@ -39,9 +51,11 @@ pipeline {
               --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
               --service-role-arn $ECS_ROLE_ARN \
               --ecs-services clusterName=$ECS_CLUSTER,serviceName=$ECS_SERVICE \
+              --load-balancer-info "targetGroupInfoList=[{name=$TARGET_GROUP_NAME}]" \
               --region $AWS_REGION
+            echo "✅ Deployment Group created."
           else
-            echo "✅ CodeDeploy Deployment Group exists: \$DG_EXISTS"
+            echo "✅ Deployment Group already exists."
           fi
           """
         }
@@ -52,7 +66,7 @@ pipeline {
       steps {
         script {
           sh """
-          echo "▶️ Starting CodeBuild project..."
+          echo "▶️ Triggering CodeBuild project: $CODEBUILD_PROJECT..."
           aws codebuild start-build \
             --project-name $CODEBUILD_PROJECT \
             --region $AWS_REGION
@@ -65,12 +79,11 @@ pipeline {
       steps {
         script {
           sh """
-          echo "🚀 Creating a deployment..."
+          echo "🚀 Creating CodeDeploy deployment..."
           aws deploy create-deployment \
             --application-name $CODEDEPLOY_APP \
             --deployment-group-name $CODEDEPLOY_DG \
-            --github-location repository=20481A04K2/awsfrontendecs,commitId=main \
-            --file-exists-behavior OVERWRITE \
+            --revision "revisionType=AppSpecContent,appSpecContent={content=\\\"file://appspec.yaml\\\"}" \
             --region $AWS_REGION
           """
         }
@@ -80,10 +93,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ CI/CD via CodeBuild → CodeDeploy to ECS triggered successfully!"
+      echo "✅ CI/CD Pipeline completed successfully!"
     }
     failure {
-      echo "❌ Pipeline failed. Check AWS CodeBuild or CodeDeploy logs."
+      echo "❌ Pipeline failed. Check CodeBuild and CodeDeploy logs in AWS Console."
     }
   }
 }
