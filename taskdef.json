@@ -1,0 +1,21 @@
+{
+  "family": "vamsi-task",
+  "networkMode": "awsvpc",
+  "executionRoleArn": "arn:aws:iam::337243655832:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "vamsi-repo",
+      "image": "public.ecr.aws/z8i7v1n4/vamsi-repo:latest",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512"
+}
