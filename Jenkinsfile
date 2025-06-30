@@ -51,7 +51,7 @@ pipeline {
               --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
               --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
               --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT},greenFleetProvisioningOption={action=COPY_AUTO_SCALING_GROUP}' \
-              --load-balancer-info "targetGroupInfoList=[{targetGroupArn=$TARGET_GROUP_ARN}]" \
+              --load-balancer-info "targetGroupInfoList=[{name=vamsi-target}]" \
               --ecs-services clusterName=$ECS_CLUSTER,serviceName=$ECS_SERVICE \
               --service-role-arn $ECS_ROLE_ARN \
               --region $AWS_REGION
