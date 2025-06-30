@@ -49,15 +49,15 @@ pipeline {
 
           if [ "\$DG_EXISTS" = "MISSING" ]; then
             aws deploy create-deployment-group \
-              --application-name \$CODEDEPLOY_APP \
-              --deployment-group-name \$CODEDEPLOY_DG \
+              --application-name $CODEDEPLOY_APP \
+              --deployment-group-name $CODEDEPLOY_DG \
               --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
               --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
-              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT},greenFleetProvisioningOption={action=DISCOVER_EXISTING}' \
-              --load-balancer-info ''targetGroupPairInfoList=[{targetGroups=[{name=\$TG_PROD},{name=\$TG_TEST}],prodTrafficRoute={listenerArns=["\$PROD_LISTENER_ARN"]},testTrafficRoute={listenerArns=["\$TEST_LISTENER_ARN"]}}]'' \
-              --ecs-services clusterName=\$ECS_CLUSTER,serviceName=\$ECS_SERVICE \
-              --service-role-arn \$ECS_ROLE_ARN \
-              --region \$AWS_REGION
+              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}' \
+              --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=vamsi-target-ip},{name=vamsi-target-ip-green}],prodTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f\"]},testTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1\"]}}]" \
+              --ecs-services clusterName=$ECS_CLUSTER,serviceName=$ECS_SERVICE \
+              --service-role-arn $ECS_ROLE_ARN \
+              --region $AWS_REGION
             echo "✅ Created Deployment Group."
           else
             echo "✅ Deployment Group exists."
