@@ -4,13 +4,12 @@ pipeline {
   environment {
     AWS_REGION = 'ap-south-1'
     CODEBUILD_PROJECT = 'vamsi-codebuild-project'
-    SERVICE_ROLE_ARN = 'arn:aws:iam::337243655832:role/service-role/codebuild-vamsi-project-service-role'
     CODEDEPLOY_APP = 'vamsi-app'
     CODEDEPLOY_DG = 'vamsi-dg'
     ECS_CLUSTER = 'vamsi-cluster'
     ECS_SERVICE = 'vamsi-task-service-8q8i0t0l'
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
-    TARGET_GROUP_NAME = 'vamsi-target'
+    TARGET_GROUP_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:targetgroup/vamsi-target/517148edab58d682'
     GITHUB_REPO = '20481A04K2/awsfrontendecs'
     GITHUB_BRANCH = 'main'
   }
@@ -52,7 +51,7 @@ pipeline {
               --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
               --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
               --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT},greenFleetProvisioningOption={action=COPY_AUTO_SCALING_GROUP}' \
-              --load-balancer-info "targetGroupInfoList=[{name=$TARGET_GROUP_NAME}]" \
+              --load-balancer-info "targetGroupInfoList=[{targetGroupArn=$TARGET_GROUP_ARN}]" \
               --ecs-services clusterName=$ECS_CLUSTER,serviceName=$ECS_SERVICE \
               --service-role-arn $ECS_ROLE_ARN \
               --region $AWS_REGION
@@ -99,7 +98,7 @@ pipeline {
 
   post {
     success {
-      echo "✅ CI/CD pipeline completed successfully using GitHub source!"
+      echo "✅ CI/CD pipeline completed successfully using GitHub, CodeBuild, ECS, and CodeDeploy!"
     }
     failure {
       echo "❌ Pipeline failed. Check AWS CodeBuild or CodeDeploy logs."
