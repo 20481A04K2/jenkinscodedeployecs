@@ -2,30 +2,123 @@ version: 0.2
 
 env:
   variables:
-    AWS_REGION: ap-south-1
-    ECR_REPO: public.ecr.aws/z8i7v1n4/vamsi-repo
+    ECR_REGION: us-east-1
+    ECS_REGION: ap-south-1
+    AWS_ACCOUNT_ID: 337243655832
+    CLUSTER_NAME: vamsi-cluster
+    SERVICE_NAME: vamsi-task-service-8q8i0t02
+    TASK_DEFINITION_FAMILY: vamsi-task
     CONTAINER_NAME: vamsi-repo
+    SUBNET_ID: subnet-0e60a6d22bbda3cc0
+    SECURITY_GROUP_ID: sg-02ddba395c421b4f3
+    EXECUTION_ROLE_ARN: arn:aws:iam::337243655832:role/ecsTaskExecutionRole
 
 phases:
+  install:
+    commands:
+      - echo Installing dependencies...
+      - apt update && apt install -y unzip
+
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
-      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/z8i7v1n4
-      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - aws --version
+      - export REPOSITORY_URI=public.ecr.aws/z8i7v1n4/vamsi-repo
+      - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - echo IMAGE_TAG=$IMAGE_TAG
+      - aws ecr-public get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin public.ecr.aws/z8i7v1n4
+
   build:
     commands:
-      - echo Building Docker image...
-      - docker build -t $ECR_REPO:$IMAGE_TAG .
-      - docker tag $ECR_REPO:$IMAGE_TAG $ECR_REPO:latest
+      - echo Build started on `date`
+      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
+      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+
   post_build:
     commands:
-      - echo Pushing Docker images to ECR...
-      - docker push $ECR_REPO:$IMAGE_TAG
-      - docker push $ECR_REPO:latest
+      - echo Build completed on `date`
+      - echo Pushing images...
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
 
-      - echo Writing imagedefinitions.json...
-      - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
+      - echo Creating ECS task definition...
+      - |
+        cat <<EOF > taskdef.json
+        {
+          "family": "$TASK_DEFINITION_FAMILY",
+          "networkMode": "awsvpc",
+          "executionRoleArn": "$EXECUTION_ROLE_ARN",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "256",
+          "memory": "512",
+          "containerDefinitions": [
+            {
+              "name": "$CONTAINER_NAME",
+              "image": "$REPOSITORY_URI:$IMAGE_TAG",
+              "portMappings": [
+                {
+                  "containerPort": 8080,
+                  "protocol": "tcp"
+                }
+              ],
+              "essential": true
+            }
+          ]
+        }
+        EOF
+
+      - |
+        export TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://taskdef.json \
+          --region $ECS_REGION \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        echo "✅ Registered Task Definition: $TASK_DEF_ARN"
+
+      - |
+        echo Checking ECS cluster...
+        export CLUSTER_STATUS=$(aws ecs describe-clusters \
+          --clusters $CLUSTER_NAME \
+          --region $ECS_REGION \
+          --query "clusters[0].status" \
+          --output text || echo "INACTIVE")
+
+        if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+          echo "Creating ECS Cluster..."
+          aws ecs create-cluster --cluster-name $CLUSTER_NAME --region $ECS_REGION
+        else
+          echo "Cluster $CLUSTER_NAME is active."
+        fi
+
+      - |
+        echo Checking if ECS service exists...
+        SERVICE_STATUS=$(aws ecs describe-services \
+          --cluster $CLUSTER_NAME \
+          --services $SERVICE_NAME \
+          --region $ECS_REGION \
+          --query "services[0].status" \
+          --output text || echo "MISSING")
+
+        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
+          echo "Service exists. Updating..."
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $TASK_DEF_ARN \
+            --region $ECS_REGION
+        else
+          echo "Creating ECS service with CODE_DEPLOY deployment controller..."
+          aws ecs create-service \
+            --cluster $CLUSTER_NAME \
+            --service-name $SERVICE_NAME \
+            --task-definition $TASK_DEF_ARN \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --deployment-controller type=CODE_DEPLOY \
+            --network-configuration "awsvpcConfiguration={subnets=[\"$SUBNET_ID\"],securityGroups=[\"$SECURITY_GROUP_ID\"],assignPublicIp=ENABLED}" \
+            --region $ECS_REGION
+        fi
+
 artifacts:
   files:
     - imagedefinitions.json
