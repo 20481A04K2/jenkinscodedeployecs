@@ -1,124 +1,114 @@
-version: 0.2
+pipeline {
+  agent any
 
-env:
-  variables:
-    ECR_REGION: us-east-1
-    ECS_REGION: ap-south-1
-    AWS_ACCOUNT_ID: 337243655832
-    CLUSTER_NAME: vamsi-cluster
-    SERVICE_NAME: vamsi-task-service-8q8i0t02
-    TASK_DEFINITION_FAMILY: vamsi-task
-    CONTAINER_NAME: vamsi-repo
-    SUBNET_ID: subnet-0e60a6d22bbda3cc0
-    SECURITY_GROUP_ID: sg-02ddba395c421b4f3
-    EXECUTION_ROLE_ARN: arn:aws:iam::337243655832:role/ecsTaskExecutionRole
+  environment {
+    AWS_REGION = 'ap-south-1'
+    CODEBUILD_PROJECT = 'vamsi-codebuild-project'
+    CODEDEPLOY_APP = 'vamsi-app'
+    CODEDEPLOY_DG = 'vamsi-dg'
+    ECS_CLUSTER = 'vamsi-cluster'
+    ECS_SERVICE = 'vamsi-task-service-8q8i0t01'
+    ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
+    GITHUB_REPO = '20481A04K2/awsfrontendecs'
+    GITHUB_BRANCH = 'main'
+    PROD_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f'
+    TEST_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1'
+    TG_PROD = 'vamsi-target-ip'
+    TG_TEST = 'vamsi-target-ip-green'
+  }
 
-phases:
-  install:
-    commands:
-      - echo Installing dependencies...
-      - apt update && apt install -y unzip
+  stages {
+    stage('Create CodeDeploy App & Deployment Group') {
+      steps {
+        script {
+          sh """
+          echo "🔧 Checking CodeDeploy application..."
+          APP_EXISTS=\$(aws deploy get-application \
+            --application-name \$CODEDEPLOY_APP \
+            --region \$AWS_REGION \
+            --query 'application.applicationName' \
+            --output text 2>/dev/null || echo "MISSING")
 
-  pre_build:
-    commands:
-      - echo Logging in to Amazon ECR...
-      - aws --version
-      - export REPOSITORY_URI=public.ecr.aws/z8i7v1n4/vamsi-repo
-      - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - echo IMAGE_TAG=$IMAGE_TAG
-      - aws ecr-public get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin public.ecr.aws/z8i7v1n4
+          if [ "\$APP_EXISTS" = "MISSING" ]; then
+            aws deploy create-application \
+              --application-name \$CODEDEPLOY_APP \
+              --compute-platform ECS \
+              --region \$AWS_REGION
+            echo "✅ Created CodeDeploy application."
+          else
+            echo "✅ CodeDeploy application exists."
+          fi
 
-  build:
-    commands:
-      - echo Build started on `date`
-      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
-      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+          echo "🔧 Checking CodeDeploy Deployment Group..."
+          DG_EXISTS=\$(aws deploy get-deployment-group \
+            --application-name \$CODEDEPLOY_APP \
+            --deployment-group-name \$CODEDEPLOY_DG \
+            --region \$AWS_REGION \
+            --query 'deploymentGroupInfo.deploymentGroupName' \
+            --output text 2>/dev/null || echo "MISSING")
 
-  post_build:
-    commands:
-      - echo Build completed on `date`
-      - echo Pushing images...
-      - docker push $REPOSITORY_URI:$IMAGE_TAG
-      - docker push $REPOSITORY_URI:latest
-
-      - echo Creating ECS task definition...
-      - |
-        cat <<EOF > taskdef.json
-        {
-          "family": "$TASK_DEFINITION_FAMILY",
-          "networkMode": "awsvpc",
-          "executionRoleArn": "$EXECUTION_ROLE_ARN",
-          "requiresCompatibilities": ["FARGATE"],
-          "cpu": "256",
-          "memory": "512",
-          "containerDefinitions": [
-            {
-              "name": "$CONTAINER_NAME",
-              "image": "$REPOSITORY_URI:$IMAGE_TAG",
-              "portMappings": [
-                {
-                  "containerPort": 8080,
-                  "protocol": "tcp"
-                }
-              ],
-              "essential": true
-            }
-          ]
+          if [ "\$DG_EXISTS" = "MISSING" ]; then
+            aws deploy create-deployment-group \
+              --application-name \$CODEDEPLOY_APP \
+              --deployment-group-name \$CODEDEPLOY_DG \
+              --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
+              --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
+              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}' \
+              --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=\$TG_PROD},{name=\$TG_TEST}],prodTrafficRoute={listenerArns=[\"\$PROD_LISTENER_ARN\"]},testTrafficRoute={listenerArns=[\"\$TEST_LISTENER_ARN\"]}}]" \
+              --ecs-services clusterName=\$ECS_CLUSTER,serviceName=\$ECS_SERVICE \
+              --service-role-arn \$ECS_ROLE_ARN \
+              --region \$AWS_REGION
+            echo "✅ Created Deployment Group."
+          else
+            echo "✅ Deployment Group exists."
+          fi
+          """
         }
-        EOF
+      }
+    }
 
-      - |
-        export TASK_DEF_ARN=$(aws ecs register-task-definition \
-          --cli-input-json file://taskdef.json \
-          --region $ECS_REGION \
-          --query 'taskDefinition.taskDefinitionArn' \
-          --output text)
-        echo "✅ Registered Task Definition: $TASK_DEF_ARN"
+    stage('Trigger CodeBuild') {
+      steps {
+        script {
+          sh """
+          echo "🚀 Starting CodeBuild..."
+          aws codebuild start-build \
+            --project-name \$CODEBUILD_PROJECT \
+            --region \$AWS_REGION
+          """
+        }
+      }
+    }
 
-      - |
-        echo Checking ECS cluster...
-        export CLUSTER_STATUS=$(aws ecs describe-clusters \
-          --clusters $CLUSTER_NAME \
-          --region $ECS_REGION \
-          --query "clusters[0].status" \
-          --output text || echo "INACTIVE")
+    stage('Trigger CodeDeploy from GitHub') {
+      steps {
+        script {
+          def COMMIT_ID = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
+          
+          if (!COMMIT_ID) {
+            error "❌ Git commit ID not found. Cannot proceed with deployment."
+          }
 
-        if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-          echo "Creating ECS Cluster..."
-          aws ecs create-cluster --cluster-name $CLUSTER_NAME --region $ECS_REGION
-        else
-          echo "Cluster $CLUSTER_NAME is active."
-        fi
+          sh """
+          echo "📦 Creating CodeDeploy deployment from GitHub commit: \$COMMIT_ID"
 
-      - |
-        echo Checking if ECS service exists...
-        SERVICE_STATUS=$(aws ecs describe-services \
-          --cluster $CLUSTER_NAME \
-          --services $SERVICE_NAME \
-          --region $ECS_REGION \
-          --query "services[0].status" \
-          --output text || echo "MISSING")
+          aws deploy create-deployment \
+            --application-name \$CODEDEPLOY_APP \
+            --deployment-group-name \$CODEDEPLOY_DG \
+            --revision revisionType=GitHub,gitHubLocation={repository=\$GITHUB_REPO,commitId=\$COMMIT_ID} \
+            --region \$AWS_REGION
+          """
+        }
+      }
+    }
+  }
 
-        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
-          echo "Service exists. Updating..."
-          aws ecs update-service \
-            --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME \
-            --task-definition $TASK_DEF_ARN \
-            --region $ECS_REGION
-        else
-          echo "Creating ECS service with CODE_DEPLOY deployment controller..."
-          aws ecs create-service \
-            --cluster $CLUSTER_NAME \
-            --service-name $SERVICE_NAME \
-            --task-definition $TASK_DEF_ARN \
-            --desired-count 1 \
-            --launch-type FARGATE \
-            --deployment-controller type=CODE_DEPLOY \
-            --network-configuration "awsvpcConfiguration={subnets=[\"$SUBNET_ID\"],securityGroups=[\"$SECURITY_GROUP_ID\"],assignPublicIp=ENABLED}" \
-            --region $ECS_REGION
-        fi
-
-artifacts:
-  files:
-    - imagedefinitions.json
+  post {
+    success {
+      echo "✅ CI/CD pipeline completed successfully using GitHub, CodeBuild, ECS, and CodeDeploy!"
+    }
+    failure {
+      echo "❌ Pipeline failed. Check AWS CodeBuild or CodeDeploy logs."
+    }
+  }
+}
