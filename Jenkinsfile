@@ -7,7 +7,7 @@ pipeline {
     CODEDEPLOY_APP = 'vamsi-app'
     CODEDEPLOY_DG = 'vamsi-dg'
     ECS_CLUSTER = 'vamsi-cluster'
-    ECS_SERVICE = 'vamsi-task-service-8q8i0t0l'
+    ECS_SERVICE = 'vamsi-task-service-8q8i0t01'
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
     TARGET_GROUP_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:targetgroup/vamsi-target/517148edab58d682'
     GITHUB_REPO = '20481A04K2/awsfrontendecs'
