@@ -93,10 +93,10 @@ pipeline {
           echo "📦 Creating CodeDeploy deployment from GitHub commit: \$COMMIT_ID"
 
           aws deploy create-deployment \
-            --application-name \$CODEDEPLOY_APP \
-            --deployment-group-name \$CODEDEPLOY_DG \
-            --revision revisionType=GitHub,gitHubLocation={repository=\$GITHUB_REPO,commitId=\$COMMIT_ID} \
-            --region \$AWS_REGION
+            --application-name ${CODEDEPLOY_APP} \
+            --deployment-group-name ${CODEDEPLOY_DG} \
+            --revision revisionType=GitHub,gitHubLocation={repository=${GITHUB_REPO},commitId=${COMMIT_ID}} \
+            --region ${AWS_REGION}
           """
         }
       }
