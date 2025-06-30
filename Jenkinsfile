@@ -12,7 +12,7 @@ pipeline {
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
     TARGET_GROUP_NAME = 'vamsi-ecs-tg'
     GITHUB_REPO = '20481A04K2/awsfrontendecs'
-    GITHUB_BRANCH = 'main'   // Change if your default branch is not 'main'
+    GITHUB_BRANCH = 'main'
   }
 
   stages {
@@ -51,7 +51,7 @@ pipeline {
               --deployment-group-name $CODEDEPLOY_DG \
               --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
               --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
-              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT},greenFleetProvisioningOption={action=COPY_AUTO_SCALING_GROUP}' \
+              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT},greenFleetProvisioningOption={action=DISCOVER_EXISTING}' \
               --load-balancer-info "targetGroupInfoList=[{name=$TARGET_GROUP_NAME}]" \
               --ecs-services clusterName=$ECS_CLUSTER,serviceName=$ECS_SERVICE \
               --service-role-arn $ECS_ROLE_ARN \
