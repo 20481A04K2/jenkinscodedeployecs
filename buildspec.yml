@@ -6,8 +6,7 @@ env:
     ECR_REPO: public.ecr.aws/z8i7v1n4/vamsi-repo
     CONTAINER_NAME: vamsi-repo
     S3_BUCKET: vamsi-deploy-artifacts
-    IMAGEDEF_KEY: ecs/imagedefinitions.json
-    APPSPEC_KEY: ecs/appspec.yaml
+    S3_KEY: ecs/deployment.zip
 
 phases:
   pre_build:
@@ -32,15 +31,15 @@ phases:
       - echo Writing imagedefinitions.json...
       - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
 
-      - echo Validating appspec.yaml from source...
+      - echo Copying appspec.yaml from source (must exist in repo)...
       - cat appspec.yaml
 
-      - echo Uploading imagedefinitions.json and appspec.yaml to S3...
-      - aws s3 cp imagedefinitions.json s3://$S3_BUCKET/$IMAGEDEF_KEY --region $AWS_REGION
-      - aws s3 cp appspec.yaml s3://$S3_BUCKET/$APPSPEC_KEY --region $AWS_REGION
+      - echo Zipping deployment artifacts...
+      - zip -r deployment.zip appspec.yaml imagedefinitions.json
+
+      - echo Uploading ZIP to S3...
+      - aws s3 cp deployment.zip s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
 
 artifacts:
   files:
-    - imagedefinitions.json
-    - appspec.yaml
-
+    - deployment.zip
