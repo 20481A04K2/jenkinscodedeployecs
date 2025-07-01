@@ -86,7 +86,6 @@ pipeline {
               --application-name \$CODEDEPLOY_APP \
               --deployment-group-name \$CODEDEPLOY_DG \
               --revision revisionType=AppSpecContent,appSpecContent={content='version:1\\nResources:\\n  - TargetService:\\n      Type:AWS::ECS::Service\\n      Properties:\\n        TaskDefinition:vamsi-task\\n        LoadBalancerInfo:\\n          ContainerName:vamsi-repo\\n          ContainerPort:8080'} \
-              --file-exists-behavior OVERWRITE \
               --region \$AWS_REGION \
               --s3-location bucket=\$S3_BUCKET,key=\$S3_KEY,bundleType=JSON
           """
