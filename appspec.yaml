@@ -3,7 +3,7 @@ Resources:
   - TargetService:
       Type: AWS::ECS::Service
       Properties:
-        TaskDefinition: vamsi-task
+        TaskDefinition: arn:aws:ecs:ap-south-1:337243655832:task-definition/vamsi-task:11
         LoadBalancerInfo:
           ContainerName: vamsi-repo
           ContainerPort: 8080
