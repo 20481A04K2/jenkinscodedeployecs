@@ -31,11 +31,11 @@ phases:
       - echo Writing imagedefinitions.json...
       - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
 
-      - echo Showing appspec.yml content...
-      - cat appspec.yml
+      - echo Showing appspec.yaml content...
+      - cat appspec.yaml
 
       - echo Creating deployment.zip package...
-      - zip deployment.zip imagedefinitions.json appspec.yml
+      - zip deployment.zip imagedefinitions.json appspec.yaml
 
       - |
         echo Contents of deployment.zip:
@@ -47,5 +47,5 @@ phases:
 artifacts:
   files:
     - imagedefinitions.json
-    - appspec.yml
+    - appspec.yaml
     - deployment.zip
