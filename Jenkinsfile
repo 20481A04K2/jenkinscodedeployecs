@@ -10,8 +10,7 @@ pipeline {
     ECS_SERVICE = 'vamsi-task-service-8q8i0t01'
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
     S3_BUCKET = 'vamsi-deploy-artifacts'
-    IMAGEDEF_KEY = 'ecs/imagedefinitions.json'
-    APPSPEC_KEY = 'ecs/appspec.yaml'
+    S3_KEY = 'ecs/deployment.zip'
   }
 
   stages {
@@ -64,11 +63,11 @@ pipeline {
       }
     }
 
-    stage('Trigger CodeBuild (build & push + upload files)') {
+    stage('Trigger CodeBuild (build, zip, upload)') {
       steps {
         script {
           sh """
-            echo "🚀 Starting CodeBuild..."
+            echo "🚀 Triggering CodeBuild..."
             aws codebuild start-build \
               --project-name \$CODEBUILD_PROJECT \
               --region \$AWS_REGION
@@ -80,19 +79,13 @@ pipeline {
     stage('Trigger CodeDeploy') {
       steps {
         script {
-          def appspecContent = sh(
-            script: "aws s3 cp s3://$S3_BUCKET/$APPSPEC_KEY - --region $AWS_REGION",
-            returnStdout: true
-          ).trim()
-
           sh """
-            echo "📦 Triggering CodeDeploy using separate appspec.yaml + imagedefinitions.json..."
+            echo "📦 Triggering CodeDeploy with ZIP revision..."
             aws deploy create-deployment \
               --application-name \$CODEDEPLOY_APP \
               --deployment-group-name \$CODEDEPLOY_DG \
-              --revision revisionType=AppSpecContent,appSpecContent={content='''${appspecContent}'''} \
-              --region \$AWS_REGION \
-              --s3-location bucket=\$S3_BUCKET,key=\$IMAGEDEF_KEY,bundleType=JSON
+              --revision revisionType=S3,s3Location={bucket=\$S3_BUCKET,key=\$S3_KEY,bundleType=zip} \
+              --region \$AWS_REGION
           """
         }
       }
