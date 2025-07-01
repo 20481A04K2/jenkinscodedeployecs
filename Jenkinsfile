@@ -9,94 +9,96 @@ pipeline {
     ECS_CLUSTER = 'vamsi-cluster'
     ECS_SERVICE = 'vamsi-task-service-8q8i0t01'
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
-    GITHUB_REPO = '20481A04K2/awsfrontendecs'
-    GITHUB_BRANCH = 'main'
-    PROD_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f'
-    TEST_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1'
-    TG_PROD = 'vamsi-target-ip'
-    TG_TEST = 'vamsi-target-ip-green'
+    S3_BUCKET = 'vamsi-deploy-artifacts'
+    S3_KEY = 'ecs/imagedefinitions.json'
   }
 
   stages {
-    stage('Create CodeDeploy App & Deployment Group') {
+    stage('Ensure CodeDeploy App and DG') {
       steps {
         script {
           sh """
-          echo "🔧 Checking CodeDeploy application..."
-          APP_EXISTS=\$(aws deploy get-application \
-            --application-name \$CODEDEPLOY_APP \
-            --region \$AWS_REGION \
-            --query 'application.applicationName' \
-            --output text 2>/dev/null || echo "MISSING")
-
-          if [ "\$APP_EXISTS" = "MISSING" ]; then
-            aws deploy create-application \
+            echo "🔧 Checking CodeDeploy application..."
+            APP_EXISTS=\$(aws deploy get-application \
               --application-name \$CODEDEPLOY_APP \
-              --compute-platform ECS \
-              --region \$AWS_REGION
-            echo "✅ Created CodeDeploy application."
-          else
-            echo "✅ CodeDeploy application exists."
-          fi
+              --region \$AWS_REGION \
+              --query 'application.applicationName' \
+              --output text 2>/dev/null || echo "MISSING")
 
-          echo "🔧 Checking CodeDeploy Deployment Group..."
-          DG_EXISTS=\$(aws deploy get-deployment-group \
-            --application-name \$CODEDEPLOY_APP \
-            --deployment-group-name \$CODEDEPLOY_DG \
-            --region \$AWS_REGION \
-            --query 'deploymentGroupInfo.deploymentGroupName' \
-            --output text 2>/dev/null || echo "MISSING")
+            if [ "\$APP_EXISTS" = "MISSING" ]; then
+              aws deploy create-application \
+                --application-name \$CODEDEPLOY_APP \
+                --compute-platform ECS \
+                --region \$AWS_REGION
+              echo "✅ Created CodeDeploy application."
+            else
+              echo "✅ CodeDeploy application exists."
+            fi
 
-          if [ "\$DG_EXISTS" = "MISSING" ]; then
-            aws deploy create-deployment-group \
+            echo "🔧 Checking Deployment Group..."
+            DG_EXISTS=\$(aws deploy get-deployment-group \
               --application-name \$CODEDEPLOY_APP \
               --deployment-group-name \$CODEDEPLOY_DG \
-              --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
-              --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
-              --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}' \
-              --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=\$TG_PROD},{name=\$TG_TEST}],prodTrafficRoute={listenerArns=[\"\$PROD_LISTENER_ARN\"]},testTrafficRoute={listenerArns=[\"\$TEST_LISTENER_ARN\"]}}]" \
-              --ecs-services clusterName=\$ECS_CLUSTER,serviceName=\$ECS_SERVICE \
-              --service-role-arn \$ECS_ROLE_ARN \
+              --region \$AWS_REGION \
+              --query 'deploymentGroupInfo.deploymentGroupName' \
+              --output text 2>/dev/null || echo "MISSING")
+
+            if [ "\$DG_EXISTS" = "MISSING" ]; then
+              aws deploy create-deployment-group \
+                --application-name \$CODEDEPLOY_APP \
+                --deployment-group-name \$CODEDEPLOY_DG \
+                --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
+                --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
+                --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}' \
+                --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=vamsi-target-ip},{name=vamsi-target-ip-green}],prodTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f\"]},testTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1\"]}}]" \
+                --ecs-services clusterName=\$ECS_CLUSTER,serviceName=\$ECS_SERVICE \
+                --service-role-arn \$ECS_ROLE_ARN \
+                --region \$AWS_REGION
+              echo "✅ Created Deployment Group."
+            else
+              echo "✅ Deployment Group exists."
+            fi
+          """
+        }
+      }
+    }
+
+    stage('Trigger CodeBuild (build & push to ECR)') {
+      steps {
+        script {
+          sh """
+            echo "🚀 Starting CodeBuild..."
+            aws codebuild start-build \
+              --project-name \$CODEBUILD_PROJECT \
               --region \$AWS_REGION
-            echo "✅ Created Deployment Group."
-          else
-            echo "✅ Deployment Group exists."
-          fi
           """
         }
       }
     }
 
-    stage('Trigger CodeBuild') {
+    stage('Upload imagedefinitions.json to S3') {
       steps {
         script {
           sh """
-          echo "🚀 Starting CodeBuild..."
-          aws codebuild start-build \
-            --project-name \$CODEBUILD_PROJECT \
-            --region \$AWS_REGION
+            echo "📤 Uploading imagedefinitions.json to S3..."
+            aws s3 cp imagedefinitions.json s3://\$S3_BUCKET/\$S3_KEY --region \$AWS_REGION
           """
         }
       }
     }
 
-    stage('Trigger CodeDeploy from GitHub') {
+    stage('Trigger CodeDeploy') {
       steps {
         script {
-          def COMMIT_ID = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-          
-          if (!COMMIT_ID) {
-            error "❌ Git commit ID not found. Cannot proceed with deployment."
-          }
-
           sh """
-          echo "📦 Creating CodeDeploy deployment from GitHub commit: \$COMMIT_ID"
-
-          aws deploy create-deployment \
-            --application-name ${CODEDEPLOY_APP} \
-            --deployment-group-name ${CODEDEPLOY_DG} \
-            --revision revisionType=GitHub,gitHubLocation={repository=${GITHUB_REPO},commitId=${COMMIT_ID}} \
-            --region ${AWS_REGION}
+            echo "📦 Triggering CodeDeploy from S3 imagedefinitions.json..."
+            aws deploy create-deployment \
+              --application-name \$CODEDEPLOY_APP \
+              --deployment-group-name \$CODEDEPLOY_DG \
+              --revision revisionType=AppSpecContent,appSpecContent={content='version:1\\nResources:\\n  - TargetService:\\n      Type:AWS::ECS::Service\\n      Properties:\\n        TaskDefinition:vamsi-task\\n        LoadBalancerInfo:\\n          ContainerName:vamsi-repo\\n          ContainerPort:8080'} \
+              --file-exists-behavior OVERWRITE \
+              --region \$AWS_REGION \
+              --s3-location bucket=\$S3_BUCKET,key=\$S3_KEY,bundleType=JSON
           """
         }
       }
@@ -105,10 +107,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ CI/CD pipeline completed successfully using GitHub, CodeBuild, ECS, and CodeDeploy!"
+      echo "✅ ECS Blue-Green Deployment via CodeDeploy succeeded!"
     }
     failure {
-      echo "❌ Pipeline failed. Check AWS CodeBuild or CodeDeploy logs."
+      echo "❌ Deployment failed. Check logs in CodeBuild and CodeDeploy."
     }
   }
 }
