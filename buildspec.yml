@@ -37,8 +37,9 @@ phases:
       - echo Creating deployment.zip package...
       - zip deployment.zip imagedefinitions.json appspec.yaml
 
-      - echo Contents of deployment.zip:
-      - unzip -l deployment.zip
+      - |
+        echo Contents of deployment.zip:
+        unzip -l deployment.zip
 
       - echo Uploading deployment.zip to S3...
       - aws s3 cp deployment.zip s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
