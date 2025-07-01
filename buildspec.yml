@@ -33,20 +33,25 @@ phases:
 
       - echo Writing appspec.yaml...
       - |
-        cat <<EOF > appspec.yaml
-        version: 1
-        Resources:
-          - TargetService:
-              Type: AWS::ECS::Service
-              Properties:
-                TaskDefinition: vamsi-task
-                LoadBalancerInfo:
-                  ContainerName: vamsi-repo
-                  ContainerPort: 8080
-        EOF
+        cat > appspec.yaml <<EOF
+version: 1
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: vamsi-task
+        LoadBalancerInfo:
+          ContainerName: vamsi-repo
+          ContainerPort: 8080
+EOF
 
       - echo Creating deployment package...
       - zip deployment.zip imagedefinitions.json appspec.yaml
+
+      - echo Verifying deployment.zip contents...
+      - unzip -l deployment.zip
+      - echo "📄 appspec.yaml contents:"
+      - cat appspec.yaml
 
       - echo Uploading deployment.zip to S3...
       - aws s3 cp deployment.zip s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
