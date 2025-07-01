@@ -10,7 +10,7 @@ pipeline {
     ECS_SERVICE = 'vamsi-task-service-8q8i0t01'
     ECS_ROLE_ARN = 'arn:aws:iam::337243655832:role/ecsCodeDeployRole'
     S3_BUCKET = 'vamsi-deploy-artifacts'
-    S3_KEY = 'ecs/imagedefinitions.json'
+    S3_KEY = 'ecs/deployment.zip'
   }
 
   stages {
@@ -50,7 +50,7 @@ pipeline {
                 --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
                 --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
                 --blue-green-deployment-configuration 'terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=1},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}' \
-                --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=vamsi-target-ip},{name=vamsi-target-ip-green}],prodTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f\"]},testTrafficRoute={listenerArns=[\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1\"]}}]" \
+                --load-balancer-info "targetGroupPairInfoList=[{targetGroups=[{name=vamsi-target-ip},{name=vamsi-target-ip-green}],prodTrafficRoute={listenerArns=[\\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/b7e94f9c1f19071f\\"]},testTrafficRoute={listenerArns=[\\"arn:aws:elasticloadbalancing:ap-south-1:337243655832:listener/app/vamsi-alb/2d62fc67cc787482/dd7f07964f1faae1\\"]}}]" \
                 --ecs-services clusterName=\$ECS_CLUSTER,serviceName=\$ECS_SERVICE \
                 --service-role-arn \$ECS_ROLE_ARN \
                 --region \$AWS_REGION
@@ -63,7 +63,7 @@ pipeline {
       }
     }
 
-    stage('Trigger CodeBuild (build & push to ECR)') {
+    stage('Trigger CodeBuild (build & push to ECR + zip + upload)') {
       steps {
         script {
           sh """
@@ -76,18 +76,16 @@ pipeline {
       }
     }
 
-
     stage('Trigger CodeDeploy') {
       steps {
         script {
           sh """
-            echo "📦 Triggering CodeDeploy from S3 imagedefinitions.json..."
+            echo "📦 Triggering CodeDeploy from S3 deployment.zip..."
             aws deploy create-deployment \
               --application-name \$CODEDEPLOY_APP \
               --deployment-group-name \$CODEDEPLOY_DG \
-              --revision revisionType=AppSpecContent,appSpecContent={content='version:1\\nResources:\\n  - TargetService:\\n      Type:AWS::ECS::Service\\n      Properties:\\n        TaskDefinition:vamsi-task\\n        LoadBalancerInfo:\\n          ContainerName:vamsi-repo\\n          ContainerPort:8080'} \
-              --region \$AWS_REGION \
-              --s3-location bucket=\$S3_BUCKET,key=\$S3_KEY,bundleType=JSON
+              --revision revisionType=S3,s3Location={bucket=\$S3_BUCKET,key=\$S3_KEY,bundleType=zip} \
+              --region \$AWS_REGION
           """
         }
       }
