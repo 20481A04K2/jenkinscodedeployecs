@@ -76,16 +76,6 @@ pipeline {
       }
     }
 
-    stage('Upload imagedefinitions.json to S3') {
-      steps {
-        script {
-          sh """
-            echo "📤 Uploading imagedefinitions.json to S3..."
-            aws s3 cp imagedefinitions.json s3://\$S3_BUCKET/\$S3_KEY --region \$AWS_REGION
-          """
-        }
-      }
-    }
 
     stage('Trigger CodeDeploy') {
       steps {
