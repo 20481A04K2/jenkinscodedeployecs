@@ -5,19 +5,23 @@ env:
     AWS_REGION: ap-south-1
     ECR_REPO: public.ecr.aws/z8i7v1n4/vamsi-repo
     CONTAINER_NAME: vamsi-repo
+    S3_BUCKET: vamsi-deploy-artifacts
+    S3_KEY: ecs/imagedefinitions.json
 
 phases:
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
-      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/z8i7v1n4
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_REPO
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - echo IMAGE_TAG=$IMAGE_TAG
+
   build:
     commands:
       - echo Building Docker image...
       - docker build -t $ECR_REPO:$IMAGE_TAG .
       - docker tag $ECR_REPO:$IMAGE_TAG $ECR_REPO:latest
+
   post_build:
     commands:
       - echo Pushing Docker images to ECR...
@@ -26,7 +30,6 @@ phases:
 
       - echo Writing imagedefinitions.json...
       - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
-artifacts:
-  files:
-    - imagedefinitions.json
 
+      - echo Uploading imagedefinitions.json to S3...
+      - aws s3 cp imagedefinitions.json s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
